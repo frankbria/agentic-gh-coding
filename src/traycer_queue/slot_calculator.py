@@ -1,0 +1,144 @@
+"""Calculates available Traycer AI processing slots based on rate limit history."""
+
+from datetime import datetime, timedelta
+from typing import NamedTuple
+
+from .database import Database
+
+
+class SlotStatus(NamedTuple):
+    """Current rate limit slot status."""
+
+    total_slots: int
+    consumed_slots: int
+    available_slots: int
+    next_slot_available_at: datetime | None
+
+
+class SlotCalculator:
+    """Infers available Traycer AI slots from processing history and rate limit messages."""
+
+    TOTAL_SLOTS = 15
+    SLOT_RECHARGE_MINUTES = 30
+
+    def __init__(self, db: Database):
+        """Initialize slot calculator.
+
+        Args:
+            db: Database instance
+        """
+        self.db = db
+
+    def calculate_available_slots(self) -> SlotStatus:
+        """Calculate how many processing slots are currently available.
+
+        Strategy:
+        1. Look at processing history from last 30 minutes
+        2. Each processing attempt (successful or rate-limited) consumed a slot
+        3. Slots recharge 30 minutes after consumption
+        4. Available slots = 15 - (slots consumed in last 30 minutes)
+
+        Returns:
+            SlotStatus with current availability
+        """
+        # Get recent processing history
+        history = self.db.get_recent_processing_history(minutes=self.SLOT_RECHARGE_MINUTES)
+
+        # TODO: Implement slot calculation logic
+        # Consider:
+        # - How many processing attempts in the last 30 minutes?
+        # - Should we parse rate_limit_seconds to infer slot consumption timing?
+        # - How do we handle edge cases (no history, all slots consumed)?
+        # - Should we be conservative (assume slots consumed) or optimistic?
+        #
+        # Hints:
+        # - Each entry in history represents a slot consumption
+        # - processed_at timestamp tells us when the slot was consumed
+        # - Slots consumed more than 30 minutes ago have recharged
+        # - Rate limit messages can help validate our calculations
+
+        consumed_slots = self._calculate_consumed_slots(history)
+        available_slots = max(0, self.TOTAL_SLOTS - consumed_slots)
+
+        # Calculate when next slot will be available
+        next_available = self._calculate_next_slot_time(history) if available_slots == 0 else None
+
+        return SlotStatus(
+            total_slots=self.TOTAL_SLOTS,
+            consumed_slots=consumed_slots,
+            available_slots=available_slots,
+            next_slot_available_at=next_available,
+        )
+
+    def _calculate_consumed_slots(self, history: list[dict]) -> int:
+        """Calculate how many slots are currently consumed.
+
+        This is the core business logic that determines our processing capacity.
+
+        Args:
+            history: Processing history from last 30 minutes
+
+        Returns:
+            Number of consumed slots (0-15)
+        """
+        # TODO: Implement this function
+        # Each processing attempt consumes a slot for 30 minutes
+        # Count how many attempts happened in the last 30 minutes
+        #
+        # Current approach: Simple count of recent attempts
+        # Future improvements:
+        # - Parse rate_limit_seconds to validate slot consumption
+        # - Handle clock skew between local time and GitHub API time
+        # - Account for multiple attempts on same issue (should only count once per 30min window)
+
+        now = datetime.now()
+        consumed = 0
+
+        # Simple implementation: count all processing attempts in last 30 minutes
+        for record in history:
+            # Parse timestamp
+            processed_at = datetime.fromisoformat(record["processed_at"])
+
+            # Check if within recharge window
+            time_diff = now - processed_at
+            if time_diff <= timedelta(minutes=self.SLOT_RECHARGE_MINUTES):
+                consumed += 1
+
+        return min(consumed, self.TOTAL_SLOTS)  # Cap at total slots
+
+    def _calculate_next_slot_time(self, history: list[dict]) -> datetime | None:
+        """Calculate when the next slot will become available.
+
+        Args:
+            history: Processing history from last 30 minutes
+
+        Returns:
+            Datetime when next slot recharges, or None if slots available
+        """
+        # TODO: Implement this function
+        # Find the oldest processing attempt in the last 30 minutes
+        # Next slot becomes available 30 minutes after that oldest attempt
+
+        if not history:
+            return None
+
+        # Find oldest processing attempt
+        oldest_time = None
+        for record in history:
+            processed_at = datetime.fromisoformat(record["processed_at"])
+            if oldest_time is None or processed_at < oldest_time:
+                oldest_time = processed_at
+
+        if oldest_time:
+            return oldest_time + timedelta(minutes=self.SLOT_RECHARGE_MINUTES)
+
+        return None
+
+    def get_processing_window_size(self) -> int:
+        """Determine how many issues can be processed in the current batch.
+
+        Returns:
+            Number of issues that can be processed now
+        """
+        status = self.calculate_available_slots()
+        return status.available_slots

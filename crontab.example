@@ -1,0 +1,14 @@
+# Traycer Queue Manager Cron Jobs
+#
+# Install these cron jobs by running:
+#   crontab -e
+# Then add the lines below (adjust paths as needed)
+
+# Scan repos for rate-limited issues - runs daily at 2 AM
+0 2 * * * cd /home/frankbria/projects/update-gh-issue-plans && source .venv/bin/activate && python -m traycer_queue.scanner >> logs/scanner.log 2>&1
+
+# Process queue - runs every 32 minutes (30 min slot recharge + 2 min buffer)
+*/32 * * * * cd /home/frankbria/projects/update-gh-issue-plans && source .venv/bin/activate && python -m traycer_queue.processor >> logs/processor.log 2>&1
+
+# Alternative: If you prefer hourly processing (less aggressive)
+# 0 * * * * cd /home/frankbria/projects/update-gh-issue-plans && source .venv/bin/activate && python -m traycer_queue.processor >> logs/processor.log 2>&1
