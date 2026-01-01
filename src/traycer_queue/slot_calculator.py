@@ -1,6 +1,6 @@
 """Calculates available Traycer AI processing slots based on rate limit history."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
 
 from .database import Database
@@ -80,17 +80,18 @@ class SlotCalculator:
         # - Handle clock skew between local time and GitHub API time
         # - Deduplicate multiple attempts on same issue within 30min window
 
-        now = datetime.now()
+        # Use UTC to match SQLite CURRENT_TIMESTAMP
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         consumed = 0
 
         # Count all processing attempts in last 30 minutes
         for record in history:
-            # Parse timestamp
+            # Parse timestamp (from SQLite, stored as UTC)
             processed_at = datetime.fromisoformat(record["processed_at"])
 
             # Check if within recharge window
             time_diff = now - processed_at
-            if time_diff <= timedelta(minutes=self.SLOT_RECHARGE_MINUTES):
+            if time_diff >= timedelta(0) and time_diff <= timedelta(minutes=self.SLOT_RECHARGE_MINUTES):
                 consumed += 1
 
         return min(consumed, self.TOTAL_SLOTS)  # Cap at total slots
@@ -110,12 +111,19 @@ class SlotCalculator:
         if not history:
             return None
 
-        # Find oldest processing attempt
+        # Use UTC to match database timestamps
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        # Find oldest processing attempt within the recharge window
         oldest_time = None
         for record in history:
             processed_at = datetime.fromisoformat(record["processed_at"])
-            if oldest_time is None or processed_at < oldest_time:
-                oldest_time = processed_at
+            time_diff = now - processed_at
+
+            # Only consider attempts within recharge window
+            if time_diff >= timedelta(0) and time_diff <= timedelta(minutes=self.SLOT_RECHARGE_MINUTES):
+                if oldest_time is None or processed_at < oldest_time:
+                    oldest_time = processed_at
 
         if oldest_time:
             return oldest_time + timedelta(minutes=self.SLOT_RECHARGE_MINUTES)
