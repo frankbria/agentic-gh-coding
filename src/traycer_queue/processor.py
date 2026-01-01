@@ -203,20 +203,10 @@ class QueueProcessor:
         Args:
             issue: GitHub issue object
         """
-        # TODO: Implement assignment toggle logic
-        # This is a key decision point with trade-offs:
-        #
-        # Option 1: Always unassign then reassign
-        #   Pro: Consistent behavior, clear trigger
-        #   Con: Creates extra events, might look spammy
-        #
-        # Option 2: Check current state and toggle accordingly
-        #   Pro: Minimal events, cleaner history
-        #   Con: More complex logic, harder to debug
-        #
-        # Option 3: Use a different trigger (label, comment, etc.)
-        #   Pro: Doesn't affect assignment
-        #   Con: Requires testing what actually triggers Traycer
+        # Current implementation: Check state and toggle accordingly (Option 2)
+        # This minimizes events and keeps cleaner history compared to always
+        # unassigning/reassigning. Alternative approaches (labels, comments)
+        # would require testing to confirm they trigger Traycer.
 
         assignees = [assignee.login for assignee in issue.assignees]
 

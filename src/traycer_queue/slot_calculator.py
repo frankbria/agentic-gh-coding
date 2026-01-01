@@ -44,18 +44,10 @@ class SlotCalculator:
         # Get recent processing history
         history = self.db.get_recent_processing_history(minutes=self.SLOT_RECHARGE_MINUTES)
 
-        # TODO: Implement slot calculation logic
-        # Consider:
-        # - How many processing attempts in the last 30 minutes?
-        # - Should we parse rate_limit_seconds to infer slot consumption timing?
-        # - How do we handle edge cases (no history, all slots consumed)?
-        # - Should we be conservative (assume slots consumed) or optimistic?
-        #
-        # Hints:
-        # - Each entry in history represents a slot consumption
-        # - processed_at timestamp tells us when the slot was consumed
-        # - Slots consumed more than 30 minutes ago have recharged
-        # - Rate limit messages can help validate our calculations
+        # Current implementation: Simple count of processing attempts in last 30 minutes
+        # Each entry in history represents a slot consumption. Slots consumed more than
+        # 30 minutes ago have recharged. Future enhancements could parse rate_limit_seconds
+        # for validation and handle clock skew between local and GitHub API time.
 
         consumed_slots = self._calculate_consumed_slots(history)
         available_slots = max(0, self.TOTAL_SLOTS - consumed_slots)
@@ -81,20 +73,17 @@ class SlotCalculator:
         Returns:
             Number of consumed slots (0-15)
         """
-        # TODO: Implement this function
-        # Each processing attempt consumes a slot for 30 minutes
-        # Count how many attempts happened in the last 30 minutes
-        #
         # Current approach: Simple count of recent attempts
-        # Future improvements:
+        # Each processing attempt consumes a slot for 30 minutes.
+        # Future enhancements tracked in GitHub issues:
         # - Parse rate_limit_seconds to validate slot consumption
         # - Handle clock skew between local time and GitHub API time
-        # - Account for multiple attempts on same issue (should only count once per 30min window)
+        # - Deduplicate multiple attempts on same issue within 30min window
 
         now = datetime.now()
         consumed = 0
 
-        # Simple implementation: count all processing attempts in last 30 minutes
+        # Count all processing attempts in last 30 minutes
         for record in history:
             # Parse timestamp
             processed_at = datetime.fromisoformat(record["processed_at"])
@@ -115,9 +104,8 @@ class SlotCalculator:
         Returns:
             Datetime when next slot recharges, or None if slots available
         """
-        # TODO: Implement this function
-        # Find the oldest processing attempt in the last 30 minutes
-        # Next slot becomes available 30 minutes after that oldest attempt
+        # Find the oldest processing attempt in the last 30 minutes.
+        # Next slot becomes available 30 minutes after that oldest attempt.
 
         if not history:
             return None
