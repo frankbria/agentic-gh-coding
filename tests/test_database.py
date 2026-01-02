@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from traycer_queue.database import Database
+from codeframe.database import Database
 
 
 @pytest.fixture

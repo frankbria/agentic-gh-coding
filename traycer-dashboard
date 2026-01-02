@@ -1,0 +1,23 @@
+#!/bin/bash
+# Global command for Traycer Queue Dashboard
+# Can be run from anywhere after installation to ~/.local/bin
+
+# Absolute path to the project directory
+PROJECT_DIR="/home/frankbria/projects/agentic-gh-coding"
+
+# Check if project directory exists
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo "Error: Project directory not found: $PROJECT_DIR"
+    exit 1
+fi
+
+# Check if virtual environment exists
+if [ ! -d "$PROJECT_DIR/.venv" ]; then
+    echo "Error: Virtual environment not found. Run 'uv venv' in $PROJECT_DIR"
+    exit 1
+fi
+
+# Change to project directory, activate venv, and run dashboard
+cd "$PROJECT_DIR" || exit 1
+source .venv/bin/activate
+python -m traycer_queue.dashboard "$@"

@@ -4,13 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Traycer Queue Manager** - Automated queue management for GitHub issue re-analysis with Traycer AI rate limiting.
+**CodeFRAME CLI** - The next-generation IDE for autonomous AI development.
 
-Traycer AI has rate limits (15 slots, 1 recharges every 30 minutes). This tool automatically:
-1. Scans GitHub repos for rate-limited issues
-2. Queues them with intelligent timing
-3. Processes the queue by toggling issue assignment (triggers Traycer)
-4. Infers available slots from processing history
+CodeFRAME CLI orchestrates AI-driven development across repositories, issues, PRs, and deployments. It uses an object-command pattern to work with high-level entities (ideas, issues, features) instead of low-level file operations.
+
+**Current Focus**: Automated GitHub issue planning via Traycer AI integration with intelligent rate limit management.
+
+### Core Philosophy
+- **Object-Command Pattern**: `cf <OBJECT> <COMMAND>` (e.g., `cf issues view`, `cf repos health`)
+- **AI-First**: Leverage AI agents for issue planning, code review, deployment orchestration
+- **Multi-Repo**: Single interface for managing work across all your repositories
+- **Autonomous**: Minimize manual intervention through automation and intelligent scheduling
 
 ## Development Commands
 
@@ -27,22 +31,47 @@ mkdir -p logs
 # Configure environment
 cp .env.example .env
 # Edit .env to add GITHUB_TOKEN and GITHUB_USERNAME
+
+# Install global commands
+chmod +x codeframe
+cp codeframe ~/.local/bin/
+ln -sf ~/.local/bin/codeframe ~/.local/bin/cf
 ```
 
-### Running the System
+### CLI Usage
 
-**Scanner** (finds rate-limited issues):
+**Issues Management**:
 ```bash
-source .venv/bin/activate
-export $(cat .env | xargs)
-python -m traycer_queue.scanner
+# View issues dashboard
+cf issues view                    # Static dashboard
+cf issues view --live             # Live auto-refresh
+cf issues view --live --refresh 10  # Custom refresh rate
+
+# Generate plans for issues
+cf issues create-plan --global    # Scan all repos for rate-limited issues
+
+# Process planning queue
+cf issues process                 # Process queued issues (respects rate limits)
+
+# Quick status
+cf issues status                  # Show queue status and available slots
 ```
 
-**Processor** (processes queue):
+**Repository Health**:
 ```bash
-source .venv/bin/activate
-export $(cat .env | xargs)
-python -m traycer_queue.processor
+# Health check
+cf repos health                   # Check cron, database, slots, GitHub CLI
+
+# Repository status (coming soon)
+cf repos status                   # Cross-repo status view
+```
+
+**Legacy Commands** (still supported):
+```bash
+# Direct Python module execution
+python -m codeframe.scanner       # Same as: cf issues create-plan
+python -m codeframe.processor     # Same as: cf issues process
+python -m codeframe.dashboard     # Same as: cf issues view
 ```
 
 ### Testing
@@ -72,25 +101,6 @@ ruff format src/
 ruff check src/ && ruff format src/
 ```
 
-### Dashboard (TUI)
-
-**Quick Status Check**:
-```bash
-./dashboard.sh
-```
-
-**Live Monitoring** (auto-refresh):
-```bash
-./dashboard.sh --live
-./dashboard.sh --live --refresh 10  # Custom refresh rate
-```
-
-The dashboard displays:
-- Queue status (total queued, ready now, slots available)
-- Top repositories by issue count
-- Recent processing activity (last hour)
-- Recent errors
-
 ### Database Inspection
 ```bash
 # Open database
@@ -108,29 +118,51 @@ sqlite3 traycer_queue.db "SELECT * FROM error_log ORDER BY timestamp DESC LIMIT 
 
 ## Architecture
 
-### Core Components
+### CLI Structure (Object-Command Pattern)
 
-**Scanner (`src/traycer_queue/scanner.py`)**
+**Entry Point** (`src/codeframe/cli.py`):
+- Main CLI orchestrator
+- Routes commands to object-specific handlers
+- Provides `codeframe` and `cf` commands
+
+**Object Handlers**:
+- `cli_issues.py` - Issues object commands (view, create-plan, process, status)
+- `cli_repos.py` - Repos object commands (health, status)
+- *(Future)* `cli_prs.py` - PR management
+- *(Future)* `cli_ideas.py` - AI-powered idea generation
+
+### Core Components (Traycer Integration)
+
+**Scanner** (`src/codeframe/scanner.py`):
 - Scans all user-owned GitHub repositories for Traycer rate limit comments
 - Pattern matching: `Rate limit exceeded. Please try after (\d+) seconds.`
 - Calculates retry timing with buffer (comment timestamp + rate limit seconds + 2 min buffer)
 - Uses PyGithub to interact with GitHub API
 
-**Processor (`src/traycer_queue/processor.py`)**
+**Processor** (`src/codeframe/processor.py`):
 - Processes queued issues by toggling GitHub issue assignment
-- Assignment toggle strategy (line 196): Has TODO for implementing assignment logic with trade-offs
+- Assignment toggle strategy: Unassign→reassign if assigned, assign if not
 - Circuit breaker: Stops after 5 consecutive errors within 5 minutes
 - Max retries: 3 attempts per issue before removal from queue
 - Waits 2 seconds after assignment toggle for Traycer to process
 
-**Slot Calculator (`src/traycer_queue/slot_calculator.py`)**
-- Infers available processing slots from recent history
+**Slot Calculator** (`src/codeframe/slot_calculator.py`):
+- Infers available processing slots from recent history and external Traycer activity
 - Rate limit model: 15 total slots, 1 recharges every 30 minutes
-- Strategy: Count processing attempts in last 30 minutes (consumed slots)
-- Available slots = 15 - consumed slots in last 30 min
-- Contains TODOs for slot calculation refinements (lines 47-58, 84-92)
+- Strategy:
+  1. Count our processing attempts in last 30 minutes (consumed slots)
+  2. Detect external Traycer activity via GitHub Search API
+  3. Adjust available slots: 15 - (our consumed slots + external activity)
+- External activity detection uses `gh search issues --commenter "traycerai[bot]"` to find all Traycer comments in last 30 minutes
+- Safe defaults: On API failures, assumes 0 external activity (prevents over-estimation of capacity)
 
-**Database (`src/traycer_queue/database.py`)**
+**Dashboard** (`src/codeframe/dashboard.py`):
+- Rich TUI (Text User Interface) for monitoring queue status
+- Displays: queue status, top repositories, recent processing activity, recent errors
+- Supports live auto-refresh mode
+- Accessible via `cf issues view` or legacy `traycer-dashboard` command
+
+**Database** (`src/codeframe/database.py`):
 - SQLite with three tables:
   - `queued_issues`: Issues awaiting re-analysis
   - `processing_history`: All attempts (for slot calculation)
@@ -140,22 +172,26 @@ sqlite3 traycer_queue.db "SELECT * FROM error_log ORDER BY timestamp DESC LIMIT 
 
 ### Key Design Patterns
 
-**Slot Inference Strategy**: The system doesn't have direct access to Traycer's rate limit API, so it infers available capacity by tracking processing history. Each processing attempt consumes a slot for 30 minutes. This is a constraint-based approach that works around API limitations.
+**Object-Command CLI Architecture**: The CLI uses a two-level command structure (object → command) to organize functionality by domain (issues, repos, prs). This allows for natural expansion as new capabilities are added, and follows Git's familiar command pattern.
+
+**Slot Inference Strategy**: The system doesn't have direct access to Traycer's rate limit API, so it infers available capacity by tracking processing history. Each processing attempt consumes a slot for 30 minutes. External activity detection via GitHub Search API prevents conflicts with other users triggering Traycer.
 
 **Assignment Toggle Triggering**: Traycer AI re-analyzes issues when they're assigned. The processor toggles assignment state (assign if unassigned, unassign→reassign if already assigned) to trigger re-analysis. See `processor.py:186-221` for implementation details.
 
 **Circuit Breaker Pattern**: Prevents API abuse by stopping processing after 5 consecutive errors within 5 minutes. Rate limit errors don't trip the breaker (they're expected behavior).
 
+**Modular Command Handlers**: Each object (issues, repos) has its own command handler module, making it easy to add new commands or entire new objects without touching core CLI logic.
+
 ### Configuration Constants
 
-**Rate Limit Timing** (`src/traycer_queue/slot_calculator.py`):
+**Rate Limit Timing** (`src/codeframe/slot_calculator.py`):
 - `TOTAL_SLOTS = 15`
 - `SLOT_RECHARGE_MINUTES = 30`
 
-**Retry Behavior** (`src/traycer_queue/scanner.py`):
+**Retry Behavior** (`src/codeframe/scanner.py`):
 - `RETRY_BUFFER_MINUTES = 2` (buffer added to rate limit timing)
 
-**Error Handling** (`src/traycer_queue/processor.py`):
+**Error Handling** (`src/codeframe/processor.py`):
 - `MAX_RETRIES = 3` (per-issue retry limit)
 - `CIRCUIT_BREAKER_THRESHOLD = 5` (consecutive errors before stopping)
 
@@ -164,6 +200,31 @@ sqlite3 traycer_queue.db "SELECT * FROM error_log ORDER BY timestamp DESC LIMIT 
 Required in `.env`:
 - `GITHUB_TOKEN`: Personal access token with `repo` scope
 - `GITHUB_USERNAME`: GitHub username for issue assignment
+
+## File Structure
+
+```
+src/codeframe/
+  ├── cli.py              # Main CLI entry point (cf/codeframe command)
+  ├── cli_issues.py       # Issues object commands
+  ├── cli_repos.py        # Repos object commands
+  ├── scanner.py          # Traycer issue scanner
+  ├── processor.py        # Queue processor
+  ├── dashboard.py        # TUI dashboard
+  ├── database.py         # SQLite management
+  └── slot_calculator.py  # Rate limit slot inference
+
+tests/
+  ├── test_database.py    # Database tests
+  └── ...
+
+Scripts:
+  ├── codeframe           # Global CLI wrapper (symlinked to ~/.local/bin/cf)
+  ├── dashboard.sh        # Legacy dashboard launcher
+  ├── run_scanner.sh      # Cron wrapper for scanner
+  ├── run_processor.sh    # Cron wrapper for processor
+  └── install_crontab.sh  # Cron job installer
+```
 
 ## Automation
 
@@ -178,23 +239,55 @@ Installation scripts:
 
 Logs written to `logs/scanner.log` and `logs/processor.log`.
 
-## TODOs and Design Decisions
+## Design Decisions & Trade-offs
 
-The codebase has intentional TODOs representing design trade-offs:
+**CLI Pattern Choice (Object-Command)**:
+- **Chosen**: `cf <object> <command>` (e.g., `cf issues view`)
+- **Alternative**: Flat commands (e.g., `cf issues-view`)
+- **Rationale**: Scalable for multi-domain tool, familiar to Git users, allows natural grouping
 
-**Assignment Toggle Logic** (`processor.py:196-210`):
-- Current: Implemented (unassign→reassign if assigned, assign if not)
-- Alternatives: Always unassign/reassign, use labels/comments as trigger
-- Trade-offs: Event spam vs. simplicity vs. trigger reliability
+**Assignment Toggle Logic** (`processor.py:186-221`):
+- **Current**: Unassign→reassign if assigned, assign if not
+- **Alternatives**: Always unassign/reassign, use labels/comments as trigger
+- **Trade-offs**: Event spam vs. simplicity vs. trigger reliability
 
-**Slot Calculation Refinements** (`slot_calculator.py:47-92`):
-- Current: Simple count of attempts in last 30 minutes
-- Improvements: Parse rate_limit_seconds for validation, handle clock skew, dedupe multiple attempts on same issue
-- Trade-offs: Accuracy vs. complexity vs. robustness
+**Slot Calculation Refinements** (`slot_calculator.py`):
+- **Current**: Counts our processing attempts + external Traycer activity via GitHub Search API
+- **Future improvements**: Parse rate_limit_seconds for validation, handle clock skew, dedupe multiple attempts on same issue
+- **Trade-offs**: Accuracy vs. complexity vs. robustness
 
 When modifying these areas, consider the documented trade-offs and test with real GitHub API interactions.
 
-## Recent Bug Fixes (2026-01-01)
+## Recent Updates (Updated: 2026-01-01)
+
+### Major Refactoring: Traycer Queue → CodeFRAME CLI
+
+**Project Rename & Expansion**:
+- Renamed from "Traycer Queue Manager" to "CodeFRAME CLI"
+- Module path changed: `src/traycer_queue/` → `src/codeframe/`
+- Package name: `codeframe-cli` (v0.1.0)
+- Vision: Expand from single-purpose Traycer integration to full autonomous development IDE
+
+**New CLI Architecture**:
+- Introduced object-command pattern (`cf <OBJECT> <COMMAND>`)
+- Added modular command handlers: `cli_issues.py`, `cli_repos.py`
+- New global commands: `codeframe` and `cf` (symlinked in `~/.local/bin/`)
+- Backward compatibility: Legacy Python module execution still works
+
+**New Commands**:
+- `cf issues view [--live] [--refresh N]` - Dashboard (replaces `traycer-dashboard`)
+- `cf issues create-plan [--global]` - Scanner (replaces direct scanner execution)
+- `cf issues process` - Processor
+- `cf issues status` - Quick queue status
+- `cf repos health` - System health check (cron, database, slots, GitHub CLI)
+- `cf repos status` - Multi-repo status (coming soon)
+
+**Future Roadmap Outlined**:
+- Phase 2: Multi-repo orchestration, issue state tracking, PR management
+- Phase 3: CodeFRAME agent integration, autonomous development
+- Phase 4: Idea generation, deployment tracking, cost metrics
+
+### Bug Fixes (2026-01-01)
 
 **Circuit Breaker False Positives**:
 - **Issue**: Circuit breaker was treating `max_retries` cleanup as real failures
@@ -205,3 +298,53 @@ When modifying these areas, consider the documented trade-offs and test with rea
 - **Issue**: When issues were still rate-limited after processing, `next_retry_at` wasn't updated, causing immediate retries
 - **Fix**: Modified `increment_retry_count()` to accept `next_retry_at` parameter and updated processor to calculate new retry time from current time + rate limit seconds
 - **Impact**: Issues now properly wait for rate limits to expire before retrying
+
+**Timezone Bug in Slot Calculation**:
+- **Issue**: Slot calculator was comparing UTC database timestamps with local MST time, resulting in -7 hour time differences
+- **Fix**: Updated `slot_calculator.py` to use `datetime.now(timezone.utc)` for all timestamp comparisons
+- **Impact**: Slot calculation now correctly shows consumed slots, preventing batch processing when no slots available
+
+**External Activity Detection** (Enhancement):
+- **Issue**: System couldn't detect when external users triggered Traycer analyses, leading to slot conflicts and rate limits
+- **Implementation**: Added GitHub Search API integration to detect all Traycer comments in last 30 minutes
+- **Algorithm**: `available_slots = 15 - (our_consumed_slots + external_activity)`
+- **API Usage**: Uses `gh search issues --commenter "traycerai[bot]"` (1 call per processor run, well within 30 req/min limit)
+- **Impact**: Accurate slot calculation prevents rate limit conflicts with external users
+
+## Contributing
+
+When adding new functionality:
+
+1. **New Objects**: Add `cli_<object>.py` with `setup_<object>_parser()` function
+2. **New Commands**: Add to existing object handler's subparsers
+3. **Core Logic**: Place in appropriate module (scanner.py, processor.py, etc.)
+4. **Testing**: Add tests to `tests/test_<module>.py`
+5. **Documentation**: Update this CLAUDE.md and README.md
+
+Example adding a new command:
+```python
+# In cli_issues.py
+def setup_issues_parser(subparsers):
+    # ... existing code ...
+
+    # New command
+    new_parser = issues_subparsers.add_parser(
+        "new-command",
+        help="Brief description",
+        description="Detailed description",
+    )
+    new_parser.set_defaults(func=cmd_issues_new_command)
+
+def cmd_issues_new_command(args):
+    """Implementation."""
+    # Your logic here
+    return 0
+```
+
+## Important Notes
+
+- **Module Rename**: All imports changed from `traycer_queue` to `codeframe`
+- **Database**: Still named `traycer_queue.db` for backward compatibility
+- **Legacy Commands**: `traycer-dashboard` still works but may be deprecated
+- **Alpha Status**: CLI structure may evolve as new objects/commands are added
+- **Testing**: Always test with real GitHub API to verify rate limit handling

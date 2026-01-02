@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "traycer-queue-manager"
+name = "codeframe-cli"
 version = "0.1.0"
-description = "Manages GitHub issue re-analysis queue for Traycer AI rate limits"
+description = "The next-generation IDE for autonomous AI development"
 requires-python = ">=3.11"
 dependencies = [
     "pygithub>=2.1.1",
