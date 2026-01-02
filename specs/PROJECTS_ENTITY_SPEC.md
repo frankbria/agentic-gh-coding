@@ -628,7 +628,7 @@ Project deleted successfully!
       "default_branch": "main"
     }
   ],
-  "workspace_path": "~/projects/gregory-taylor"
+  "workspace_path": null
 }
 ```
 
@@ -638,7 +638,7 @@ Project deleted successfully!
   "id": 1,
   "name": "gregory-taylor-photography",
   "description": "Professional photography portfolio",
-  "workspace_path": "~/projects/gregory-taylor",
+  "workspace_path": null,
   "created_at": "2026-01-01T10:00:00Z",
   "repos": [
     {
@@ -698,7 +698,7 @@ Project deleted successfully!
   "id": 1,
   "name": "gregory-taylor-photography",
   "description": "Professional photography portfolio",
-  "workspace_path": "~/projects/gregory-taylor",
+  "workspace_path": null,
   "created_at": "2026-01-01T10:00:00Z",
   "repos": [
     {
