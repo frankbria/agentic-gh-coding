@@ -126,7 +126,7 @@ cf repos health
 **Timeline**: Next 2-4 weeks
 **Dependencies**: None
 
-**Key Focus**: This phase integrates with the existing CodeFRAME system (`/home/frankbria/projects/codeframe/`) to enable:
+**Key Focus**: This phase integrates with the existing CodeFRAME system ([github.com/frankbria/codeframe](https://github.com/frankbria/codeframe)) to enable:
 1. Launching CodeFRAME agents from CLI (headless mode)
 2. Optional web-ui launch via CLI flag
 3. Project and spec management
@@ -308,7 +308,7 @@ cf sessions list [--project PROJECT] [--status STATUS]
 
 **4. agents** - CodeFRAME Agent Lifecycle Management
 
-Integration with main CodeFRAME system (`/home/frankbria/projects/codeframe/`).
+Integration with main CodeFRAME system ([github.com/frankbria/codeframe](https://github.com/frankbria/codeframe)).
 
 **Commands:**
 ```bash
